@@ -3,52 +3,17 @@
 
 <head>
     <meta charset='utf-8'>
-    <title>TV ctrl</title>
-    <link rel="icon" href="inc/blue_remote_512.png" type="image/png" />
+    <title>AutoLight ESP Test</title>
+    <!-- <link rel="icon" href="inc/blue_remote_512.png" type="image/png" /> -->
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <link href="inc/style.css" rel="stylesheet" type="text/css">
-    <script onload='getTags(); getChannels();' src="inc/script.js" type="text/javascript" language="JavaScript"></script>
+    <!-- <link href="inc/style.css" rel="stylesheet" type="text/css"> -->
+    <!-- <script onload='getTags(); getChannels();' src="inc/script.js" type="text/javascript" language="JavaScript"></script> -->
 </head>
 
 <body>
-    <header>
-        <button id='onOff'>ON/OFF</button>
-        <button id='volUp'>VOL +</button>
-        <button id='upCh'>CH +</button>
-        <button id='mute'>MUTE</button>
-        <button id='volDown'>VOL -</button>
-        <button id='downCh'>CH -</button>
-        <button id='guide'>GUIDE</button>
-        <button id='arrRight' class="bigFont">►</button>
-        <button id='back'>BACK</button>
-        <div class='clear'></div>
-    </header>
-    <div id='modes'>
-        <button id='modeAllCh' onclick='loadSelectedChannels=false; getChannels()'>ALL CHANNELS</button>
-        <button id='modeSelCh' onclick='loadSelectedChannels=true;  getChannels()'>SELECTED CH</button>
-        <button id='modeTags' onclick='displayTags()'>TAGS</button>
-        <div class='clear'></div>
-    </div>
+<!-- <body onload='GetConfig();'> -->
     <div id='main'>
-        <div class='clear'></div>
-    </div>
-    <footer>
-        <button id='colorGreen'>Weak Light</button>
-        <button id='colorYellow'>Normal Light</button>
-        <div class='clear'></div>
-    </footer>
-    <div id='frmTagsSel' class='form-popup'>
-        <form>
-            <h2>Tags</h2>
-            <div id='frmTagsMain'>
-                <input type='checkbox' id='favs' checked /> <label for='favs'>Favs</label> </br>
-                <input type='checkbox' id='sport' /> <label for='sport'>Sport</label> </br>
-            </div>
-            <div id='frmTagsFooter'>
-                <button type='button' class='frmTagsBtn' onclick='confirmTagsPopup()'>Ok</button>
-                <button type='button' class='frmTagsBtn' onclick='closeTagsPopup()'>Cancel</button>
-            </div>
-        </form>
+        <h1>Pozdrav!</h1>
     </div>
 </body>
 
