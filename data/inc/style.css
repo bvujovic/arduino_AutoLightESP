@@ -11,15 +11,22 @@ input[type="number"] {
     text-align: right;
     font-size: 100%;
 }
-table {
-    padding: 10px;
-    font-size: 150%;
+#tblParams {
+    margin: 10px;
 }
-td {
+#tblCurrData {
+    margin: 10px;
+}
+th, td {
     padding: 5px;
 }
 #btnOk {
     margin: 30px 70px;
-    font-size: 150%;
     width: 100px;
+}
+.big {
+    font-size: 150%;
+}
+a {
+    color: green;
 }

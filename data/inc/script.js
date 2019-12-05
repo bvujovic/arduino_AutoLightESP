@@ -1,5 +1,5 @@
 
-const TEST = false;
+const TEST = true;
 
 const sepRows = '\n';
 const sepProps = '=';
