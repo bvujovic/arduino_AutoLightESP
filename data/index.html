@@ -6,14 +6,36 @@
     <title>AutoLight ESP Test</title>
     <!-- <link rel="icon" href="inc/blue_remote_512.png" type="image/png" /> -->
     <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <!-- <link href="inc/style.css" rel="stylesheet" type="text/css"> -->
+    <link href="inc/style.css" rel="stylesheet" type="text/css">
+    <script src="inc/script.js" type="text/javascript" language="JavaScript"></script>
     <!-- <script onload='getTags(); getChannels();' src="inc/script.js" type="text/javascript" language="JavaScript"></script> -->
 </head>
 
-<body>
-<!-- <body onload='GetConfig();'> -->
+<body onload='GetConfig();'>
     <div id='main'>
-        <h1>Pozdrav!</h1>
+        <h1>AutoLight ESP</h1>
+
+        <form action="">
+            <table border='0'>
+                <tr>
+                    <td>Light On</td>
+                    <td><input type="number" id="numLightOn" min="1" max="3600"> seconds</td>
+                </tr>
+                <tr>
+                    <td>Backlight Limit Low</td>
+                    <td><input type="number" id="numBacklightLimitLow" min="1" max="1023"> seconds</td>
+                </tr>
+                <tr>
+                    <td>Backlight Limit High</td>
+                    <td><input type="number" id="numBacklightLimitHigh" min="1" max="1023"> seconds</td>
+                </tr>
+                <tr>
+                    <td>WiFi On</td>
+                    <td><input type="number" id="numWifiOn" min="0" max="3600" size="3"> seconds</td>
+                </tr>
+            </table>
+            <input type="button" id='btnOk' value="OK" onclick="SaveConfig()">
+        </form>
     </div>
 </body>
 

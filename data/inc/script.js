@@ -3,7 +3,6 @@ const TEST = false;
 
 const sepRows = '\n';
 const sepProps = '=';
-const sepTime = ';';
 
 class Config {
     constructor(name, value) {
@@ -21,12 +20,10 @@ var configs = [];
 function GetConfig() {
     if (TEST) {
         const resp =
-            `auto=1
-auto_from=07:00
-auto_to=07:30
-moment=0
-moment_from=01:08
-moment_mins=10`;
+            `lightOn=6
+backlightLimitLow=200
+backlightLimitHigh=400
+wifiOn=2200`;
         ParseConfig(resp);
     }
     else {
@@ -35,7 +32,7 @@ moment_mins=10`;
             if (this.readyState == 4 && this.status == 200)
                 ParseConfig(this.responseText);
         };
-        xhttp.open('GET', 'dat/config.ini', true); xhttp.send();
+        xhttp.open('GET', 'config.ini', true); xhttp.send();
     }
 }
 
@@ -53,11 +50,10 @@ function ParseConfig(resp) {
 function docel(id) { return document.getElementById(id); }
 
 function DisplayConfig() {
-    docel('chkAuto').checked = ConfValue('auto') == '1';
-    docel('timAutoFrom').value = ConfValue('auto_from');
-    docel('timAutoTo').value = ConfValue('auto_to');
-    docel('chkMoment').checked = false; //B ConfValue('moment') == '1';
-    docel('numMoment').value = ConfValue('moment_mins');
+    docel('numLightOn').value = ConfValue('lightOn');
+    docel('numBacklightLimitLow').value = ConfValue('backlightLimitLow');
+    docel('numBacklightLimitHigh').value = ConfValue('backlightLimitHigh');
+    docel('numWifiOn').value = ConfValue('wifiOn');
 }
 
 function ConfValue(confName) {
@@ -69,15 +65,11 @@ function ConfValue(confName) {
 
 function SaveConfig() {
     const sepParams = '&';
-    const now = new Date();
-    const time = now.getHours() + ":" + now.getMinutes();
     const confData
-        = 'auto' + sepProps + (docel('chkAuto').checked ? 1 : 0) + sepParams
-        + 'auto_from' + sepProps + docel('timAutoFrom').value + sepParams
-        + 'auto_to' + sepProps + docel('timAutoTo').value + sepParams
-        + 'moment' + sepProps + (docel('chkMoment').checked ? 1 : 0) + sepParams
-        + 'moment_from' + sepProps + time + sepParams
-        + 'moment_mins' + sepProps + docel('numMoment').value;
+        = 'lightOn' + sepProps + docel('numLightOn').value + sepParams
+        + 'backlightLimitLow' + sepProps + docel('numBacklightLimitLow').value + sepParams
+        + 'backlightLimitHigh' + sepProps + docel('numBacklightLimitHigh').value + sepParams
+        + 'wifiOn' + sepProps + docel('numWifiOn').value;
 
     if (TEST)
         console.log(confData);
