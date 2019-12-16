@@ -1,5 +1,5 @@
 
-const TEST = true;
+const TEST = false;
 
 const sepRows = '\n';
 const sepProps = '=';
@@ -23,7 +23,7 @@ function GetConfig() {
             `lightOn=6
 backlightLimitLow=200
 backlightLimitHigh=400
-wifiOn=2200`;
+wifiOn=1234`;
         ParseConfig(resp);
     }
     else {

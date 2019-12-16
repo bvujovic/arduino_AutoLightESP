@@ -11,24 +11,45 @@
 //   delay(1000);
 // }
 
+extern "C"
+{
+#include "user_interface.h" // Required for wifi_station_connect() to work
+}
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <EEPROM.h>
+
 #include <WiFiServerBasics.h>
 ESP8266WebServer server(80);
-
-// pins
-// const byte pinRelay = D3;
 
 #define DEBUG true
 #define FPM_SLEEP_MAX_TIME 0xFFFFFFF
 
+// pins
+// INPUT
+const int pinPhotoRes = A0; // pin za LDR i taster za WiFi
+const int pinPIR = D6;
+// OUTPUT
+const int pinLight = D8;
+const int eepromPos = 88; // pozicija u EEPROMu na kojoj ce se cuvati podatak da li se wifi pali ili ne pri sledecm resetu
+const int pinLed = 2;     // ugradjena LED dioda na ESPu
+
 // variables
 char configFilePath[] = "/config.ini";
-int lightOn;            // koliko je sekundi svetlo upaljeno posle poslednjeg signala sa PIR-a
-int backlightLimitLow;  // granica pozadinskog osvetljenja iznad koje se svetlo ne pali
-int backlightLimitHigh; // granica pozadinskog osvetljenja iznad koje se svetlo ne pali
-int wifiOn;             // broj sekundi koje WiFi i veb server ostaju ukljuceni od poslednjeg pritiska na taster
+int lightOn;             // koliko je sekundi svetlo upaljeno posle poslednjeg signala sa PIR-a
+int backlightLimitLow;   // granica pozadinskog osvetljenja iznad koje se svetlo ne pali
+int backlightLimitHigh;  // granica pozadinskog osvetljenja ispod koje se svetlo ne gasi
+int backlightLimit;      // granica pozadinskog osvetljenja ...
+int wifiOn;              // broj sekundi koje WiFi i veb server ostaju ukljuceni od poslednjeg pritiska na taster
+bool isServerOn;         // da li wifi i veb server treba da budu ukljuceni
+long msBtnStart = -1;    // millis za pocetak pritiska na taster
+long msServerLastAction; // millis za poslednju akciju sa veb serverom (pokretanje ili ucitavanje neke stranice)
+long msLastPir;          // poslednji put kada je signal sa PIRa bio HIGH
+int i = 0;
 
 void ReadConfigFile()
 {
+    msServerLastAction = millis();
     File fp = SPIFFS.open(configFilePath, "r");
     if (fp)
     {
@@ -57,6 +78,7 @@ void ReadConfigFile()
     }
     else
         Serial.println("config.ini open (r) faaail.");
+    backlightLimit = backlightLimitLow;
     if (DEBUG)
     {
         Serial.println(lightOn);
@@ -76,6 +98,7 @@ void WriteParamToFile(File &fp, const char *pname)
 void HandleSaveConfig()
 {
     // lightOn=6&backlightLimitLow=200&backlightLimitHigh=400&wifiOn=2200
+    msServerLastAction = millis();
     File fp = SPIFFS.open(configFilePath, "w");
     if (fp)
     {
@@ -88,78 +111,110 @@ void HandleSaveConfig()
     }
     else
         Serial.println("config.ini open (w) faaail.");
-
     server.send(200, "text/plain", "");
+}
+
+void handleTest()
+{
+    Serial.println("test page started");
+    server.send(200, "text/html", "<h1>You are connected</h1>");
+    Serial.println("test page ended");
 }
 
 void setup()
 {
-    // pinMode(pinRelay, OUTPUT);
-    // pinMode(pinLed, OUTPUT);
-    // digitalWrite(pinRelay, false);
-    // digitalWrite(pinLed, true);
+    pinMode(pinPIR, INPUT);
+    pinMode(pinPhotoRes, INPUT);
+    pinMode(pinLed, OUTPUT);
+    digitalWrite(pinLed, true);
+    pinMode(pinLight, OUTPUT);
+    digitalWrite(pinLight, false);
 
     Serial.begin(115200);
-    ConnectToWiFi();
-    SetupIPAddress(40);
 
-    // server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
-    server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
-    server.on("/inc/script.js", []() { HandleDataFile(server, "/inc/script.js", "text/javascript"); });
-    server.on("/inc/style.css", []() { HandleDataFile(server, "/inc/style.css", "text/css"); });
-    server.on("/config.ini", []() { HandleDataFile(server, "/config.ini", "text/x-csv"); });
-    server.on("/save_config", HandleSaveConfig);
-    server.begin();
-    if (DEBUG)
-        Serial.println("HTTP server started");
     SPIFFS.begin();
-    // ReadConfigFile();
-}
+    ReadConfigFile();
 
-void WiFiOn()
-{
-    // digitalWrite(pinLed, false);
-    wifi_fpm_do_wakeup();
-    wifi_fpm_close();
+    EEPROM.begin(512);
+    isServerOn = EEPROM.read(eepromPos);
+    if (isServerOn)
+    {
+        ConnectToWiFi();
+        SetupIPAddress(40);
 
-    //Serial.println("Reconnecting");
-    wifi_set_opmode(STATION_MODE);
-    wifi_station_connect();
-}
-
-void WiFiOff()
-{
-    //TODO  https://github.com/esp8266/Arduino/issues/4082
-
-    // wifi_station_disconnect();
-    // wifi_set_opmode(NULL_MODE);
-    // wifi_set_sleep_type(MODEM_SLEEP_T);
-    // wifi_fpm_open();
-    // wifi_fpm_do_sleep(FPM_SLEEP_MAX_TIME);
-    // digitalWrite(pinLed, true);
+        // server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
+        server.on("/test", handleTest);
+        server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
+        server.on("/inc/script.js", []() { HandleDataFile(server, "/inc/script.js", "text/javascript"); });
+        server.on("/inc/style.css", []() { HandleDataFile(server, "/inc/style.css", "text/css"); });
+        server.on("/config.ini", []() { HandleDataFile(server, "/config.ini", "text/x-csv"); });
+        server.on("/save_config", HandleSaveConfig);
+        server.on("/current_data.html", []() { HandleDataFile(server, "/current_data.html", "text/html"); });
+        server.begin();
+        msServerLastAction = millis();
+        if (DEBUG)
+            Serial.println("HTTP server started");
+    }
+    else
+    {
+        WiFi.forceSleepBegin();
+        delay(10);                  // give RF section time to shutdown
+        system_update_cpu_freq(80); //* ovo mozda ne mora da se stavi
+    }
 }
 
 void loop()
 {
-    server.handleClient();
+    int valPhotoRes = analogRead(pinPhotoRes);
+    long ms = millis();
+    if (valPhotoRes > backlightLimit) // prostorija je dovoljno osvetljena
+    {
+        digitalWrite(pinLight, false);
+        backlightLimit = backlightLimitLow;
+        //B prostorijaOsvetljena = true;
+    }
+    else // prostorija nije dovoljno osvetljena
+    {
+        if (digitalRead(pinPIR))
+            msLastPir = ms;
 
-    // if (millis() < 30 * 1000)
-    //     server.handleClient();
-    // else
-    // {
-    //     Serial.println("Zaustavljanje servera");
-    //     server.stop();
-    //     delay(2000);
-    //     Serial.println("gasim wifi...");
-    //     WiFiOff();
-    //     while(1)
-    //     ;
-    // }
+        if (msLastPir != -1 && ms - msLastPir < 1000 * lightOn)
+        {
+            backlightLimitLow = backlightLimitHigh;
+            digitalWrite(pinLight, true);
+            //* mozda ovde staviti delay od 5sec kada se prvi put pali svetlo
+            //* da ne bi bilo prebrzog pali-gasenja svetla
+        }
+    }
 
-    // gasenje WiFi-a x minuta posle paljenja aparata
-    // if (millis() > WIFI_ON_INIT && wiFiOn)
-    // {
-    //     Serial.println("gasim wifi...");
-    //     WiFiOff();
-    // }
+    if (valPhotoRes > 1000) // ako je pritisnut taster nabudzen sa LDRom
+    {
+        if (msBtnStart == -1)
+            msBtnStart = ms;             // pamti se pocetak pritiska na taster
+        else if (ms - msBtnStart > 1000) // ako se taster drzi vise od sekunde
+        {
+            //... sacuvati tekuce promenljive na EEPROM ili flash
+            EEPROM.write(eepromPos, true);
+            EEPROM.commit();
+            delay(10);
+            ESP.restart();
+        }
+    }
+    else
+        msBtnStart = -1;
+
+    digitalWrite(pinLed, !isServerOn);
+    if (isServerOn)
+    {
+        server.handleClient();
+        if (ms - msServerLastAction > 1000 * wifiOn)
+        {
+            EEPROM.write(eepromPos, false);
+            EEPROM.commit();
+            delay(10);
+            ESP.restart();
+        }
+    }
+
+    delay(10);
 }
