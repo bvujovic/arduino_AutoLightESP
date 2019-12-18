@@ -1,16 +1,4 @@
 
-// Test za LDR i taster
-// const int pinInput = A0; // pin za LDR[ove] i taster za WiFi
-// void setup() {
-//   pinMode(pinInput, INPUT);
-//   Serial.begin(9600);
-// }
-// void loop() {
-//   int input = analogRead(pinInput);
-//   Serial.println(input);
-//   delay(1000);
-// }
-
 extern "C"
 {
 #include "user_interface.h" // Required for wifi_station_connect() to work
@@ -18,12 +6,52 @@ extern "C"
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
+#include <LinkedList.h>
 
 #include <WiFiServerBasics.h>
 ESP8266WebServer server(80);
 
 #define DEBUG true
 #define FPM_SLEEP_MAX_TIME 0xFFFFFFF
+
+// podaci koji opisuju trenutno stanje sistema
+struct Status
+{
+    int id;         // redni broj zapisa
+    int ldr;        // vrednost LDR senzora
+    int secFromPIR; // sekundi od poslednjeg PIR signala
+    bool isLightOn; // da li je svetlo upaljeno
+    int secWiFi;    // koliko dugo radi WiFi/server
+
+    Status() {}
+
+    Status(int _id, int _ldr, int _secFromPIR, bool _isLightOn, int _secWiFi)
+    {
+        id = _id;
+        ldr = _ldr;
+        secFromPIR = _secFromPIR;
+        isLightOn = _isLightOn;
+        secWiFi = _secWiFi;
+    }
+
+    String ToString()
+    {
+        String s;
+        s += id;
+        s += ';';
+        s += ldr;
+        s += ';';
+        s += secFromPIR;
+        s += ';';
+        s += isLightOn ? 1 : 0;
+        s += ';';
+        s += secWiFi;
+        return s;
+    }
+};
+LinkedList<Status> statuses = LinkedList<Status>(); // lista statusa
+int idStatus = 0;
+long msLastStatus;
 
 // pins
 // INPUT
@@ -43,13 +71,14 @@ int backlightLimit;      // granica pozadinskog osvetljenja ...
 int wifiOn;              // broj sekundi koje WiFi i veb server ostaju ukljuceni od poslednjeg pritiska na taster
 bool isServerOn;         // da li wifi i veb server treba da budu ukljuceni
 long msBtnStart = -1;    // millis za pocetak pritiska na taster
-long msServerLastAction; // millis za poslednju akciju sa veb serverom (pokretanje ili ucitavanje neke stranice)
-long msLastPir;          // poslednji put kada je signal sa PIRa bio HIGH
+long msLastServerAction; // millis za poslednju akciju sa veb serverom (pokretanje ili ucitavanje neke stranice)
+long msLastPir = -1;     // poslednji put kada je signal sa PIRa bio HIGH
+//B long msWiFiStarted;      // vreme paljenja WiFi-a i veb servera
 int i = 0;
 
 void ReadConfigFile()
 {
-    msServerLastAction = millis();
+    msLastServerAction = millis();
     File fp = SPIFFS.open(configFilePath, "r");
     if (fp)
     {
@@ -98,7 +127,7 @@ void WriteParamToFile(File &fp, const char *pname)
 void HandleSaveConfig()
 {
     // lightOn=6&backlightLimitLow=200&backlightLimitHigh=400&wifiOn=2200
-    msServerLastAction = millis();
+    msLastServerAction = millis();
     File fp = SPIFFS.open(configFilePath, "w");
     if (fp)
     {
@@ -132,6 +161,14 @@ void setup()
 
     Serial.begin(115200);
 
+    //T
+    // Status s1(1, 150, 18, true, 31);
+    // statuses.add(s1);
+    // Status s2(2, 155, 19, false, 32);
+    // statuses.add(s2);
+    // for (size_t i = 0; i < statuses.size(); i++)
+    //     Serial.println(statuses.get(i).ToString());
+
     SPIFFS.begin();
     ReadConfigFile();
 
@@ -145,13 +182,14 @@ void setup()
         // server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
         server.on("/test", handleTest);
         server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
-        server.on("/inc/script.js", []() { HandleDataFile(server, "/inc/script.js", "text/javascript"); });
+        server.on("/inc/index.js", []() { HandleDataFile(server, "/inc/index.js", "text/javascript"); });
         server.on("/inc/style.css", []() { HandleDataFile(server, "/inc/style.css", "text/css"); });
         server.on("/config.ini", []() { HandleDataFile(server, "/config.ini", "text/x-csv"); });
         server.on("/save_config", HandleSaveConfig);
         server.on("/current_data.html", []() { HandleDataFile(server, "/current_data.html", "text/html"); });
+        server.on("/inc/current_data.js", []() { HandleDataFile(server, "/inc/current_data.js", "text/javascript"); });
         server.begin();
-        msServerLastAction = millis();
+        msLastStatus = msLastServerAction = millis();
         if (DEBUG)
             Serial.println("HTTP server started");
     }
@@ -167,11 +205,11 @@ void loop()
 {
     int valPhotoRes = analogRead(pinPhotoRes);
     long ms = millis();
+    bool isLightOn;
     if (valPhotoRes > backlightLimit) // prostorija je dovoljno osvetljena
     {
-        digitalWrite(pinLight, false);
+        digitalWrite(pinLight, isLightOn = false);
         backlightLimit = backlightLimitLow;
-        //B prostorijaOsvetljena = true;
     }
     else // prostorija nije dovoljno osvetljena
     {
@@ -181,10 +219,10 @@ void loop()
         if (msLastPir != -1 && ms - msLastPir < 1000 * lightOn)
         {
             backlightLimitLow = backlightLimitHigh;
-            digitalWrite(pinLight, true);
-            //* mozda ovde staviti delay od 5sec kada se prvi put pali svetlo
-            //* da ne bi bilo prebrzog pali-gasenja svetla
+            digitalWrite(pinLight, isLightOn = true);
         }
+        else
+            digitalWrite(pinLight, isLightOn = false);
     }
 
     if (valPhotoRes > 1000) // ako je pritisnut taster nabudzen sa LDRom
@@ -193,7 +231,7 @@ void loop()
             msBtnStart = ms;             // pamti se pocetak pritiska na taster
         else if (ms - msBtnStart > 1000) // ako se taster drzi vise od sekunde
         {
-            //... sacuvati tekuce promenljive na EEPROM ili flash
+            //todo sacuvati tekuce promenljive na EEPROM ili flash
             EEPROM.write(eepromPos, true);
             EEPROM.commit();
             delay(10);
@@ -206,8 +244,17 @@ void loop()
     digitalWrite(pinLed, !isServerOn);
     if (isServerOn)
     {
+        if (ms - msLastStatus > 1000)
+        {
+            int wiFiCountdown = wifiOn - (ms - msLastServerAction) / 1000;
+            Status s(idStatus++, valPhotoRes, (ms - msLastPir) / 1000, isLightOn, wiFiCountdown);
+            statuses.add(s);
+            Serial.println(s.ToString());
+            msLastStatus = ms;
+        }
+
         server.handleClient();
-        if (ms - msServerLastAction > 1000 * wifiOn)
+        if (ms - msLastServerAction > 1000 * wifiOn)
         {
             EEPROM.write(eepromPos, false);
             EEPROM.commit();
