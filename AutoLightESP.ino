@@ -143,11 +143,22 @@ void HandleSaveConfig()
     server.send(200, "text/plain", "");
 }
 
-void handleTest()
+void HandleTest()
 {
     Serial.println("test page started");
     server.send(200, "text/html", "<h1>You are connected</h1>");
     Serial.println("test page ended");
+}
+
+void HandleGetStatus()
+{
+    if (statuses.size() > 0)
+    {
+        Status last = statuses.get(statuses.size() - 1);
+        server.send(200, "text/x-csv", last.ToString());
+    }
+    else
+        server.send(204, "text/x-csv", "");
 }
 
 void setup()
@@ -174,13 +185,18 @@ void setup()
 
     EEPROM.begin(512);
     isServerOn = EEPROM.read(eepromPos);
+
+    digitalWrite(pinLight, isServerOn); // ako se pali WiFi, svetlo je upaljeno
+    backlightLimit = isServerOn ? backlightLimitHigh : backlightLimitLow;
+
     if (isServerOn)
     {
         ConnectToWiFi();
         SetupIPAddress(40);
 
-        // server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
-        server.on("/test", handleTest);
+        //B server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
+        server.on("/inc/bathroom_light.png",  []() { HandleDataFile(server, "/inc/bathroom_light.png",  "image/png"); });
+        server.on("/test", HandleTest);
         server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
         server.on("/inc/index.js", []() { HandleDataFile(server, "/inc/index.js", "text/javascript"); });
         server.on("/inc/style.css", []() { HandleDataFile(server, "/inc/style.css", "text/css"); });
@@ -188,6 +204,7 @@ void setup()
         server.on("/save_config", HandleSaveConfig);
         server.on("/current_data.html", []() { HandleDataFile(server, "/current_data.html", "text/html"); });
         server.on("/inc/current_data.js", []() { HandleDataFile(server, "/inc/current_data.js", "text/javascript"); });
+        server.on("/get_status", HandleGetStatus);
         server.begin();
         msLastStatus = msLastServerAction = millis();
         if (DEBUG)
@@ -203,8 +220,10 @@ void setup()
 
 void loop()
 {
-    int valPhotoRes = analogRead(pinPhotoRes);
     long ms = millis();
+    if (digitalRead(pinPIR))
+        msLastPir = ms;
+    int valPhotoRes = analogRead(pinPhotoRes);
     bool isLightOn;
     if (valPhotoRes > backlightLimit) // prostorija je dovoljno osvetljena
     {
@@ -213,12 +232,9 @@ void loop()
     }
     else // prostorija nije dovoljno osvetljena
     {
-        if (digitalRead(pinPIR))
-            msLastPir = ms;
-
         if (msLastPir != -1 && ms - msLastPir < 1000 * lightOn)
         {
-            backlightLimitLow = backlightLimitHigh;
+            backlightLimit = backlightLimitHigh;
             digitalWrite(pinLight, isLightOn = true);
         }
         else
@@ -249,7 +265,6 @@ void loop()
             int wiFiCountdown = wifiOn - (ms - msLastServerAction) / 1000;
             Status s(idStatus++, valPhotoRes, (ms - msLastPir) / 1000, isLightOn, wiFiCountdown);
             statuses.add(s);
-            Serial.println(s.ToString());
             msLastStatus = ms;
         }
 
