@@ -1,10 +1,4 @@
-
-extern "C"
-{
-#include "user_interface.h" // Required for wifi_station_connect() to work
-}
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
 #include <EEPROM.h>
 #include <LinkedList.h>
 
@@ -12,9 +6,8 @@ extern "C"
 ESP8266WebServer server(80);
 
 #define DEBUG true
-#define FPM_SLEEP_MAX_TIME 0xFFFFFFF
 
-// podaci koji opisuju trenutno stanje sistema
+// podaci koji opisuju trenutno stanje aparata
 struct Status
 {
     int id;         // redni broj zapisa
@@ -49,14 +42,14 @@ struct Status
         return s;
     }
 };
-LinkedList<Status> statuses = LinkedList<Status>(); // lista statusa
+LinkedList<Status> statuses = LinkedList<Status>(); // lista statusa aparata
 int idStatus = 0;
 long msLastStatus;
 
 // pins
 // INPUT
 const int pinPhotoRes = A0; // pin za LDR i taster za WiFi
-const int pinPIR = D6;
+const int pinPIR = D0;
 // OUTPUT
 const int pinLight = D8;
 const int eepromPos = 88; // pozicija u EEPROMu na kojoj ce se cuvati podatak da li se wifi pali ili ne pri sledecm resetu
@@ -73,7 +66,7 @@ bool isServerOn;         // da li wifi i veb server treba da budu ukljuceni
 long msBtnStart = -1;    // millis za pocetak pritiska na taster
 long msLastServerAction; // millis za poslednju akciju sa veb serverom (pokretanje ili ucitavanje neke stranice)
 long msLastPir = -1;     // poslednji put kada je signal sa PIRa bio HIGH
-//B long msWiFiStarted;      // vreme paljenja WiFi-a i veb servera
+int consPirs = 0;        // broj uzastopnih pinPIR HIGH vrednosti
 int i = 0;
 
 void ReadConfigFile()
@@ -171,15 +164,6 @@ void setup()
     digitalWrite(pinLight, false);
 
     Serial.begin(115200);
-
-    //T
-    // Status s1(1, 150, 18, true, 31);
-    // statuses.add(s1);
-    // Status s2(2, 155, 19, false, 32);
-    // statuses.add(s2);
-    // for (size_t i = 0; i < statuses.size(); i++)
-    //     Serial.println(statuses.get(i).ToString());
-
     SPIFFS.begin();
     ReadConfigFile();
 
@@ -194,8 +178,7 @@ void setup()
         ConnectToWiFi();
         SetupIPAddress(40);
 
-        //B server.on("/inc/favicon.ico", []() { HandleDataFile(server, "/inc/favicon.ico", "image/x-icon"); });
-        server.on("/inc/bathroom_light.png",  []() { HandleDataFile(server, "/inc/bathroom_light.png",  "image/png"); });
+        server.on("/inc/bathroom_light.png", []() { HandleDataFile(server, "/inc/bathroom_light.png", "image/png"); });
         server.on("/test", HandleTest);
         server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
         server.on("/inc/index.js", []() { HandleDataFile(server, "/inc/index.js", "text/javascript"); });
@@ -221,7 +204,10 @@ void setup()
 void loop()
 {
     long ms = millis();
-    if (digitalRead(pinPIR))
+    int valPir = digitalRead(pinPIR);
+    consPirs = valPir ? consPirs + 1 : 0;
+
+    if (consPirs > 10) // HIGH na PIR-u se prihvata samo ako je ta vrednost 10 puta zaredom ocitana
         msLastPir = ms;
     int valPhotoRes = analogRead(pinPhotoRes);
     bool isLightOn;
@@ -244,10 +230,9 @@ void loop()
     if (valPhotoRes > 1000) // ako je pritisnut taster nabudzen sa LDRom
     {
         if (msBtnStart == -1)
-            msBtnStart = ms;             // pamti se pocetak pritiska na taster
-        else if (ms - msBtnStart > 1000) // ako se taster drzi vise od sekunde
+            msBtnStart = ms;                            // pamti se pocetak pritiska na taster
+        else if (ms - msBtnStart > 1000 && !isServerOn) // ako se taster drzi vise od sekunde
         {
-            //todo sacuvati tekuce promenljive na EEPROM ili flash
             EEPROM.write(eepromPos, true);
             EEPROM.commit();
             delay(10);
