@@ -37,8 +37,9 @@ struct Status
         s += secFromPIR;
         s += ';';
         s += isLightOn ? 1 : 0;
-        s += ';';
-        s += secWiFi;
+        //B
+        // s += ';';
+        // s += secWiFi;
         return s;
     }
 };
@@ -51,12 +52,14 @@ long msLastStatus;
 const int pinPhotoRes = A0; // pin za LDR i taster za WiFi
 const int pinPIR = D0;
 // OUTPUT
-const int pinLight = D8;
+const int pinLight = D8;  // LED svetlo za osvetljavanje prostorije
 const int eepromPos = 88; // pozicija u EEPROMu na kojoj ce se cuvati podatak da li se wifi pali ili ne pri sledecm resetu
-const int pinLed = 2;     // ugradjena LED dioda na ESPu
+const int pinLed = 2;     // ugradjena LED dioda na ESPu - upaljena kada radi wifi
 
 // variables
 char configFilePath[] = "/config.ini";
+int lightLevel = 255;    // jacina LED svetla (0-255)
+bool isLightOn;          // da li je svetlo upaljeno ili ne
 int lightOn;             // koliko je sekundi svetlo upaljeno posle poslednjeg signala sa PIR-a
 int backlightLimitLow;   // granica pozadinskog osvetljenja iznad koje se svetlo ne pali
 int backlightLimitHigh;  // granica pozadinskog osvetljenja ispod koje se svetlo ne gasi
@@ -89,6 +92,8 @@ void ReadConfigFile()
 
             if (name.equals("lightOn"))
                 lightOn = value.toInt();
+            if (name.equals("lightLevel"))
+                lightLevel = value.toInt();
             if (name.equals("backlightLimitLow"))
                 backlightLimitLow = value.toInt();
             if (name.equals("backlightLimitHigh"))
@@ -99,7 +104,11 @@ void ReadConfigFile()
         fp.close();
     }
     else
-        Serial.println("config.ini open (r) faaail.");
+    {
+        Serial.print(configFilePath);
+        Serial.println(" open (r) faaail.");
+    }
+
     backlightLimit = backlightLimitLow;
     if (DEBUG)
     {
@@ -125,6 +134,7 @@ void HandleSaveConfig()
     if (fp)
     {
         WriteParamToFile(fp, "lightOn");
+        WriteParamToFile(fp, "lightLevel");
         WriteParamToFile(fp, "backlightLimitLow");
         WriteParamToFile(fp, "backlightLimitHigh");
         WriteParamToFile(fp, "wifiOn");
@@ -132,7 +142,10 @@ void HandleSaveConfig()
         ReadConfigFile();
     }
     else
-        Serial.println("config.ini open (w) faaail.");
+    {
+        Serial.print(configFilePath);
+        Serial.println(" open (w) faaail.");
+    }
     server.send(200, "text/plain", "");
 }
 
@@ -145,6 +158,7 @@ void HandleTest()
 
 void HandleGetStatus()
 {
+    msLastServerAction = millis();
     if (statuses.size() > 0)
     {
         Status last = statuses.get(statuses.size() - 1);
@@ -154,6 +168,12 @@ void HandleGetStatus()
         server.send(204, "text/x-csv", "");
 }
 
+void SetLight(bool isOn)
+{
+    isLightOn = isOn;
+    analogWrite(pinLight, isOn ? lightLevel : 0);
+}
+
 void setup()
 {
     pinMode(pinPIR, INPUT);
@@ -161,7 +181,7 @@ void setup()
     pinMode(pinLed, OUTPUT);
     digitalWrite(pinLed, true);
     pinMode(pinLight, OUTPUT);
-    digitalWrite(pinLight, false);
+    SetLight(false);
 
     Serial.begin(115200);
     SPIFFS.begin();
@@ -170,7 +190,7 @@ void setup()
     EEPROM.begin(512);
     isServerOn = EEPROM.read(eepromPos);
 
-    digitalWrite(pinLight, isServerOn); // ako se pali WiFi, svetlo je upaljeno
+    SetLight(isServerOn); // ako se pali WiFi, svetlo je upaljeno
     backlightLimit = isServerOn ? backlightLimitHigh : backlightLimitLow;
 
     if (isServerOn)
@@ -183,7 +203,7 @@ void setup()
         server.on("/", []() { HandleDataFile(server, "/index.html", "text/html"); });
         server.on("/inc/index.js", []() { HandleDataFile(server, "/inc/index.js", "text/javascript"); });
         server.on("/inc/style.css", []() { HandleDataFile(server, "/inc/style.css", "text/css"); });
-        server.on("/config.ini", []() { HandleDataFile(server, "/config.ini", "text/x-csv"); });
+        server.on(configFilePath, []() { HandleDataFile(server, configFilePath, "text/x-csv"); });
         server.on("/save_config", HandleSaveConfig);
         server.on("/current_data.html", []() { HandleDataFile(server, "/current_data.html", "text/html"); });
         server.on("/inc/current_data.js", []() { HandleDataFile(server, "/inc/current_data.js", "text/javascript"); });
@@ -207,13 +227,12 @@ void loop()
     int valPir = digitalRead(pinPIR);
     consPirs = valPir ? consPirs + 1 : 0;
 
-    if (consPirs > 10) // HIGH na PIR-u se prihvata samo ako je ta vrednost 10 puta zaredom ocitana
+    if (consPirs > 5) // HIGH na PIR-u se prihvata samo ako je ta vrednost 5 puta zaredom ocitana
         msLastPir = ms;
     int valPhotoRes = analogRead(pinPhotoRes);
-    bool isLightOn;
     if (valPhotoRes > backlightLimit) // prostorija je dovoljno osvetljena
     {
-        digitalWrite(pinLight, isLightOn = false);
+        SetLight(false);
         backlightLimit = backlightLimitLow;
     }
     else // prostorija nije dovoljno osvetljena
@@ -221,10 +240,10 @@ void loop()
         if (msLastPir != -1 && ms - msLastPir < 1000 * lightOn)
         {
             backlightLimit = backlightLimitHigh;
-            digitalWrite(pinLight, isLightOn = true);
+            SetLight(true);
         }
         else
-            digitalWrite(pinLight, isLightOn = false);
+            SetLight(false);
     }
 
     if (valPhotoRes > 1000) // ako je pritisnut taster nabudzen sa LDRom

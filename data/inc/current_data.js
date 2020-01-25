@@ -47,10 +47,10 @@ function addTableRow(status) {
     var cell1 = row.insertCell(1);
     var cell2 = row.insertCell(2);
     var cell3 = row.insertCell(3);
-    var cell4 = row.insertCell(4);
+    //B var cell4 = row.insertCell(4);
     cell0.innerHTML = id = parseInt(status[0]);
     cell1.innerHTML = status[1];
     cell2.innerHTML = status[2];
     cell3.innerHTML = status[3] == '0' ? 'OFF' : 'ON';
-    cell4.innerHTML = status[4];
+    //B cell4.innerHTML = status[4];
 }

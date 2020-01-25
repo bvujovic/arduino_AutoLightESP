@@ -21,6 +21,7 @@ function GetConfig() {
     if (TEST) {
         const resp =
             `lightOn=6
+lightLevel=255
 backlightLimitLow=200
 backlightLimitHigh=400
 wifiOn=1234`;
@@ -51,6 +52,7 @@ function docel(id) { return document.getElementById(id); }
 
 function DisplayConfig() {
     docel('numLightOn').value = ConfValue('lightOn');
+    docel('numLightLevel').value = ConfValue('lightLevel');
     docel('numBacklightLimitLow').value = ConfValue('backlightLimitLow');
     docel('numBacklightLimitHigh').value = ConfValue('backlightLimitHigh');
     docel('numWifiOn').value = ConfValue('wifiOn');
@@ -67,6 +69,7 @@ function SaveConfig() {
     const sepParams = '&';
     const confData
         = 'lightOn' + sepProps + docel('numLightOn').value + sepParams
+        + 'lightLevel' + sepProps + docel('numLightLevel').value + sepParams
         + 'backlightLimitLow' + sepProps + docel('numBacklightLimitLow').value + sepParams
         + 'backlightLimitHigh' + sepProps + docel('numBacklightLimitHigh').value + sepParams
         + 'wifiOn' + sepProps + docel('numWifiOn').value;
