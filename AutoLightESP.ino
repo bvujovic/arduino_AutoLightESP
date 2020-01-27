@@ -7,46 +7,6 @@ ESP8266WebServer server(80);
 
 #define DEBUG true
 
-// podaci koji opisuju trenutno stanje aparata
-struct Status
-{
-    int id;         // redni broj zapisa
-    int ldr;        // vrednost LDR senzora
-    int secFromPIR; // sekundi od poslednjeg PIR signala
-    bool isLightOn; // da li je svetlo upaljeno
-    int secWiFi;    // koliko dugo radi WiFi/server
-
-    Status() {}
-
-    Status(int _id, int _ldr, int _secFromPIR, bool _isLightOn, int _secWiFi)
-    {
-        id = _id;
-        ldr = _ldr;
-        secFromPIR = _secFromPIR;
-        isLightOn = _isLightOn;
-        secWiFi = _secWiFi;
-    }
-
-    String ToString()
-    {
-        String s;
-        s += id;
-        s += ';';
-        s += ldr;
-        s += ';';
-        s += secFromPIR;
-        s += ';';
-        s += isLightOn ? 1 : 0;
-        //B
-        // s += ';';
-        // s += secWiFi;
-        return s;
-    }
-};
-LinkedList<Status> statuses = LinkedList<Status>(); // lista statusa aparata
-int idStatus = 0;
-long msLastStatus;
-
 // pins
 // INPUT
 const int pinPhotoRes = A0; // pin za LDR i taster za WiFi
@@ -64,13 +24,35 @@ int lightOn;             // koliko je sekundi svetlo upaljeno posle poslednjeg s
 int backlightLimitLow;   // granica pozadinskog osvetljenja iznad koje se svetlo ne pali
 int backlightLimitHigh;  // granica pozadinskog osvetljenja ispod koje se svetlo ne gasi
 int backlightLimit;      // granica pozadinskog osvetljenja ...
-int wifiOn;              // broj sekundi koje WiFi i veb server ostaju ukljuceni od poslednjeg pritiska na taster
-bool isServerOn;         // da li wifi i veb server treba da budu ukljuceni
+int wifiOn;              // broj sekundi za koje wifi ostaje ukljucen; 0 -> wifi je uvek ukljucen
+bool isServerOn = false; // da li wifi i veb server treba da budu ukljuceni
 long msBtnStart = -1;    // millis za pocetak pritiska na taster
 long msLastServerAction; // millis za poslednju akciju sa veb serverom (pokretanje ili ucitavanje neke stranice)
 long msLastPir = -1;     // poslednji put kada je signal sa PIRa bio HIGH
 int consPirs = 0;        // broj uzastopnih pinPIR HIGH vrednosti
 int i = 0;
+
+LinkedList<String> statuses = LinkedList<String>(); // lista statusa aparata
+int idStatus = 0;
+long msLastStatus;
+
+// Dodavanje novog status stringa u listu statusa
+void AddStatusString(int _id, int _ldr, int _secFromPIR, bool _isLightOn)
+{
+    // brisanje liste ako njena velicina predje neku zadatu vrednost
+    if (statuses.size() > 100)
+        statuses.clear();
+
+    String s;
+    s += _id;
+    s += ';';
+    s += _ldr;
+    s += ';';
+    s += _secFromPIR;
+    s += ';';
+    s += _isLightOn ? 1 : 0;
+    statuses.add(s);
+}
 
 void ReadConfigFile()
 {
@@ -147,6 +129,9 @@ void HandleSaveConfig()
         Serial.println(" open (w) faaail.");
     }
     server.send(200, "text/plain", "");
+
+    if (wifiOn == 0 && !isServerOn)
+        RestartForWiFi(true);
 }
 
 void HandleTest()
@@ -161,8 +146,8 @@ void HandleGetStatus()
     msLastServerAction = millis();
     if (statuses.size() > 0)
     {
-        Status last = statuses.get(statuses.size() - 1);
-        server.send(200, "text/x-csv", last.ToString());
+        String last = statuses.get(statuses.size() - 1);
+        server.send(200, "text/x-csv", last);
     }
     else
         server.send(204, "text/x-csv", "");
@@ -172,6 +157,15 @@ void SetLight(bool isOn)
 {
     isLightOn = isOn;
     analogWrite(pinLight, isOn ? lightLevel : 0);
+}
+
+// Pamcenje informacije o tome da li ce WiFi biti ukljucen ili ne posle sledeceg paljenja/budjenja aparata i reset
+void RestartForWiFi(bool nextWiFiOn)
+{
+    EEPROM.write(eepromPos, nextWiFiOn);
+    EEPROM.commit();
+    delay(10);
+    ESP.restart();
 }
 
 void setup()
@@ -188,7 +182,7 @@ void setup()
     ReadConfigFile();
 
     EEPROM.begin(512);
-    isServerOn = EEPROM.read(eepromPos);
+    isServerOn = wifiOn == 0 ? true : EEPROM.read(eepromPos);
 
     SetLight(isServerOn); // ako se pali WiFi, svetlo je upaljeno
     backlightLimit = isServerOn ? backlightLimitHigh : backlightLimitLow;
@@ -216,8 +210,7 @@ void setup()
     else
     {
         WiFi.forceSleepBegin();
-        delay(10);                  // give RF section time to shutdown
-        system_update_cpu_freq(80); //* ovo mozda ne mora da se stavi
+        delay(10); // give RF section time to shutdown
     }
 }
 
@@ -251,12 +244,7 @@ void loop()
         if (msBtnStart == -1)
             msBtnStart = ms;                            // pamti se pocetak pritiska na taster
         else if (ms - msBtnStart > 1000 && !isServerOn) // ako se taster drzi vise od sekunde
-        {
-            EEPROM.write(eepromPos, true);
-            EEPROM.commit();
-            delay(10);
-            ESP.restart();
-        }
+            RestartForWiFi(true);
     }
     else
         msBtnStart = -1;
@@ -267,19 +255,15 @@ void loop()
         if (ms - msLastStatus > 1000)
         {
             int wiFiCountdown = wifiOn - (ms - msLastServerAction) / 1000;
-            Status s(idStatus++, valPhotoRes, (ms - msLastPir) / 1000, isLightOn, wiFiCountdown);
-            statuses.add(s);
+            AddStatusString(idStatus++, valPhotoRes, (ms - msLastPir) / 1000, isLightOn);
             msLastStatus = ms;
         }
 
+        // da li je vreme da se iskljuci WiFi tj. veb server
+        if (wifiOn != 0 && ms - msLastServerAction > 1000 * wifiOn)
+            RestartForWiFi(false);
+
         server.handleClient();
-        if (ms - msLastServerAction > 1000 * wifiOn)
-        {
-            EEPROM.write(eepromPos, false);
-            EEPROM.commit();
-            delay(10);
-            ESP.restart();
-        }
     }
 
     delay(10);
